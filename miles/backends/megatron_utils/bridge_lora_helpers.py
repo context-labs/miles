@@ -20,25 +20,36 @@ from .lora_utils import convert_target_modules_to_hf, patch_param_grad_buffer_fo
 
 logger = logging.getLogger(__name__)
 
-# Main-attention projections that PEFT can wrap (post-#2706 names; see
-# miles_plugins/models/deepseek_v4/deepseek_v4.py). ``linear_o_group_proj`` (HF
-# ``wo_a``) is deliberately absent: it is a bare ``nn.Parameter``, and wrapping
-# it additionally needs the grouped (group-diagonal) LoRA semantics that the
-# generic adapter does not provide.
-_DEEPSEEK_V4_MAIN_ATTENTION_TARGETS = frozenset(
-    {"linear_q_down_proj", "linear_q_up_proj", "linear_kv_proj", "linear_proj"}
-)
+# V4 main-attention HF leaf -> Megatron graph leaf (post-#2706 names; see
+# miles_plugins/models/deepseek_v4/deepseek_v4.py). ``wo_a`` is deliberately
+# absent: it is a bare ``nn.Parameter`` (``linear_o_group_proj``) that PEFT
+# cannot wrap, and its grouped semantics need a dedicated adapter path.
+_DEEPSEEK_V4_MAIN_ATTENTION_TARGETS = {
+    "wq_a": "linear_q_down_proj",
+    "wq_b": "linear_q_up_proj",
+    "wkv": "linear_kv_proj",
+    "wo_b": "linear_proj",
+}
 
 
 def _qualify_deepseek_v4_lora_targets(target_modules):
-    """Qualify V4's main attention leaves so they cannot match nested DSA modules."""
+    """Map V4's HF attention names onto the Megatron graph, scoped to main attention.
+
+    Bare ``wq_b`` would otherwise convert to the DSA indexer's ``linear_wq_b``
+    (see lora_utils._MLA_HF_TO_MEGATRON); the qualified glob keeps PEFT's suffix
+    matcher on the main-attention module and passes the Megatron-name conversion
+    through unchanged (globbed names are already Megatron-side).
+    """
 
     if not target_modules:
         return target_modules
     is_string = isinstance(target_modules, str)
     modules = [target_modules] if is_string else list(target_modules)
     qualified = [
-        f"*.self_attention.{module}" if module in _DEEPSEEK_V4_MAIN_ATTENTION_TARGETS else module for module in modules
+        f"*.self_attention.{_DEEPSEEK_V4_MAIN_ATTENTION_TARGETS[module]}"
+        if module in _DEEPSEEK_V4_MAIN_ATTENTION_TARGETS
+        else module
+        for module in modules
     ]
     return qualified[0] if is_string else qualified
 

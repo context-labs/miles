@@ -144,21 +144,14 @@ def test_dsv4_lora_construction_selects_native_provider():
 
 def test_dsv4_main_attention_targets_are_disambiguated_from_indexer():
     assert _qualify_deepseek_v4_lora_targets(
-        [
-            "linear_q_down_proj",
-            "linear_q_up_proj",
-            "linear_kv_proj",
-            "linear_proj",
-            "indexer.linear_wq_b",
-            "linear_fc1",
-        ]
+        ["wq_a", "wq_b", "wkv", "wo_b", "indexer.wq_b", "gate_proj"]
     ) == [
         "*.self_attention.linear_q_down_proj",
         "*.self_attention.linear_q_up_proj",
         "*.self_attention.linear_kv_proj",
         "*.self_attention.linear_proj",
-        "indexer.linear_wq_b",
-        "linear_fc1",
+        "indexer.wq_b",
+        "gate_proj",
     ]
 
 
