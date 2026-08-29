@@ -20,11 +20,18 @@ from .lora_utils import convert_target_modules_to_hf, patch_param_grad_buffer_fo
 
 logger = logging.getLogger(__name__)
 
-_DEEPSEEK_V4_MAIN_ATTENTION_TARGETS = frozenset({"wq_a", "wq_b", "wkv", "wo_a", "wo_b"})
+# Main-attention projections that PEFT can wrap (post-#2706 names; see
+# miles_plugins/models/deepseek_v4/deepseek_v4.py). ``linear_o_group_proj`` (HF
+# ``wo_a``) is deliberately absent: it is a bare ``nn.Parameter``, and wrapping
+# it additionally needs the grouped (group-diagonal) LoRA semantics that the
+# generic adapter does not provide.
+_DEEPSEEK_V4_MAIN_ATTENTION_TARGETS = frozenset(
+    {"linear_q_down_proj", "linear_q_up_proj", "linear_kv_proj", "linear_proj"}
+)
 
 
 def _qualify_deepseek_v4_lora_targets(target_modules):
-    """Disambiguate V4's main attention leaves from nested DSA modules."""
+    """Qualify V4's main attention leaves so they cannot match nested DSA modules."""
 
     if not target_modules:
         return target_modules

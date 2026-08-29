@@ -13,51 +13,71 @@ from megatron.bridge.models.mla_provider import MLAModelProvider
 from megatron.core.models.gpt.gpt_model import GPTModel
 
 
+# Megatron names follow the post-#2706 graph, where the plugin's weights carry
+# Megatron's own names and layout (mirrors miles_plugins/mbridge/deepseekv4.py).
+# Note ``linear_o_group_proj`` (HF ``wo_a``) is a bare parameter with no ``.weight``.
 _DSV4_ATTENTION_MAPPINGS = {
-    "decoder.layers.*.self_attention.wq_a.weight": "model.layers.*.self_attn.wq_a.weight",
-    "decoder.layers.*.self_attention.q_norm.weight": "model.layers.*.self_attn.q_norm.weight",
-    "decoder.layers.*.self_attention.wq_b.weight": "model.layers.*.self_attn.wq_b.weight",
-    "decoder.layers.*.self_attention.wkv.weight": "model.layers.*.self_attn.wkv.weight",
-    "decoder.layers.*.self_attention.kv_norm.weight": "model.layers.*.self_attn.kv_norm.weight",
-    "decoder.layers.*.self_attention.wo_a.weight": "model.layers.*.self_attn.wo_a.weight",
-    "decoder.layers.*.self_attention.wo_b.weight": "model.layers.*.self_attn.wo_b.weight",
+    "decoder.layers.*.self_attention.linear_q_down_proj.weight": "model.layers.*.self_attn.wq_a.weight",
+    "decoder.layers.*.self_attention.q_layernorm.weight": "model.layers.*.self_attn.q_norm.weight",
+    "decoder.layers.*.self_attention.linear_q_up_proj.weight": "model.layers.*.self_attn.wq_b.weight",
+    "decoder.layers.*.self_attention.linear_kv_proj.weight": "model.layers.*.self_attn.wkv.weight",
+    "decoder.layers.*.self_attention.kv_layernorm.weight": "model.layers.*.self_attn.kv_norm.weight",
+    "decoder.layers.*.self_attention.linear_o_group_proj": "model.layers.*.self_attn.wo_a.weight",
+    "decoder.layers.*.self_attention.linear_proj.weight": "model.layers.*.self_attn.wo_b.weight",
 }
 
 _DSV4_REPLICATED_MAPPINGS = {
-    "decoder.layers.*.hc_attn_fn": "model.layers.*.hc_attn_fn",
-    "decoder.layers.*.hc_attn_base": "model.layers.*.hc_attn_base",
-    "decoder.layers.*.hc_attn_scale": "model.layers.*.hc_attn_scale",
-    "decoder.layers.*.hc_ffn_fn": "model.layers.*.hc_ffn_fn",
-    "decoder.layers.*.hc_ffn_base": "model.layers.*.hc_ffn_base",
-    "decoder.layers.*.hc_ffn_scale": "model.layers.*.hc_ffn_scale",
-    "decoder.layers.*.self_attention.compressor.ape": "model.layers.*.self_attn.compressor.ape",
-    "decoder.layers.*.self_attention.compressor.wkv.weight": "model.layers.*.self_attn.compressor.wkv.weight",
-    "decoder.layers.*.self_attention.compressor.wgate.weight": "model.layers.*.self_attn.compressor.wgate.weight",
-    "decoder.layers.*.self_attention.compressor.norm.weight": "model.layers.*.self_attn.compressor.norm.weight",
-    "decoder.layers.*.self_attention.indexer.compressor.ape": "model.layers.*.self_attn.indexer.compressor.ape",
-    "decoder.layers.*.self_attention.indexer.compressor.wkv.weight": (
+    # Hyper-connections: three mcore alphas share one packed HF scale tensor.
+    "decoder.layers.*.self_attention_hyper_connection.mapping_proj.weight": "model.layers.*.hc_attn_fn",
+    "decoder.layers.*.self_attention_hyper_connection.bias": "model.layers.*.hc_attn_base",
+    "decoder.layers.*.self_attention_hyper_connection.alpha_pre": "model.layers.*.hc_attn_scale",
+    "decoder.layers.*.self_attention_hyper_connection.alpha_post": "model.layers.*.hc_attn_scale",
+    "decoder.layers.*.self_attention_hyper_connection.alpha_res": "model.layers.*.hc_attn_scale",
+    "decoder.layers.*.mlp_hyper_connection.mapping_proj.weight": "model.layers.*.hc_ffn_fn",
+    "decoder.layers.*.mlp_hyper_connection.bias": "model.layers.*.hc_ffn_base",
+    "decoder.layers.*.mlp_hyper_connection.alpha_pre": "model.layers.*.hc_ffn_scale",
+    "decoder.layers.*.mlp_hyper_connection.alpha_post": "model.layers.*.hc_ffn_scale",
+    "decoder.layers.*.mlp_hyper_connection.alpha_res": "model.layers.*.hc_ffn_scale",
+    # KV compressor (CSA/HCA layers).
+    "decoder.layers.*.self_attention.core_attention.compressor.ape": "model.layers.*.self_attn.compressor.ape",
+    "decoder.layers.*.self_attention.core_attention.compressor.linear_wkv.weight": (
+        "model.layers.*.self_attn.compressor.wkv.weight"
+    ),
+    "decoder.layers.*.self_attention.core_attention.compressor.linear_wgate.weight": (
+        "model.layers.*.self_attn.compressor.wgate.weight"
+    ),
+    "decoder.layers.*.self_attention.core_attention.compressor.norm.weight": (
+        "model.layers.*.self_attn.compressor.norm.weight"
+    ),
+    # Indexer compressor.
+    "decoder.layers.*.self_attention.core_attention.indexer.compressor.ape": (
+        "model.layers.*.self_attn.indexer.compressor.ape"
+    ),
+    "decoder.layers.*.self_attention.core_attention.indexer.compressor.linear_wkv.weight": (
         "model.layers.*.self_attn.indexer.compressor.wkv.weight"
     ),
-    "decoder.layers.*.self_attention.indexer.compressor.wgate.weight": (
+    "decoder.layers.*.self_attention.core_attention.indexer.compressor.linear_wgate.weight": (
         "model.layers.*.self_attn.indexer.compressor.wgate.weight"
     ),
-    "decoder.layers.*.self_attention.indexer.compressor.norm.weight": (
+    "decoder.layers.*.self_attention.core_attention.indexer.compressor.norm.weight": (
         "model.layers.*.self_attn.indexer.compressor.norm.weight"
     ),
     "decoder.layers.*.mlp.router.tid2eid": "model.layers.*.mlp.topk.tid2eid",
     "decoder.layers.*.mlp.router.expert_bias": "model.layers.*.mlp.gate.e_score_correction_bias",
-    "decoder.hc_head_params.hc_head_fn": "model.hc_head_fn",
-    "decoder.hc_head_params.hc_head_base": "model.hc_head_base",
-    "decoder.hc_head_params.hc_head_scale": "model.hc_head_scale",
+    "decoder.hc_head_fn": "model.hc_head_fn",
+    "decoder.hc_head_base": "model.hc_head_base",
+    "decoder.hc_head_scale": "model.hc_head_scale",
 }
 
 _DSV4_COLUMN_PARALLEL_MAPPINGS = {
-    "decoder.layers.*.self_attention.attn_sink": "model.layers.*.self_attn.attn_sink",
+    "decoder.layers.*.self_attention.core_attention.attn_sink": "model.layers.*.self_attn.attn_sink",
 }
 
 _DSV4_AUTO_MAPPINGS = {
-    "decoder.layers.*.self_attention.indexer.linear_wq_b.weight": "model.layers.*.self_attn.indexer.wq_b.weight",
-    "decoder.layers.*.self_attention.indexer.linear_weights_proj.weight": (
+    "decoder.layers.*.self_attention.core_attention.indexer.linear_wq_b.weight": (
+        "model.layers.*.self_attn.indexer.wq_b.weight"
+    ),
+    "decoder.layers.*.self_attention.core_attention.indexer.linear_weights_proj.weight": (
         "model.layers.*.self_attn.indexer.weights_proj.weight"
     ),
 }

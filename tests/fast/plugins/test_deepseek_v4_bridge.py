@@ -91,22 +91,31 @@ def test_dsv4_explicit_mapping_semantics():
     mappings = {mapping.megatron_param: mapping for mapping in _get_dsv4_explicit_mappings()}
     assert len(mappings) == len(_get_dsv4_explicit_mappings())
 
+    for conn in ("self_attention_hyper_connection", "mlp_hyper_connection"):
+        assert isinstance(
+            mappings[f"decoder.layers.*.{conn}.mapping_proj.weight"], ReplicatedMapping
+        )
+        assert isinstance(mappings[f"decoder.layers.*.{conn}.bias"], ReplicatedMapping)
+        for segment in ("alpha_pre", "alpha_post", "alpha_res"):
+            assert isinstance(mappings[f"decoder.layers.*.{conn}.{segment}"], ReplicatedMapping)
     for suffix in ("fn", "base", "scale"):
-        assert isinstance(mappings[f"decoder.layers.*.hc_attn_{suffix}"], ReplicatedMapping)
-        assert isinstance(mappings[f"decoder.layers.*.hc_ffn_{suffix}"], ReplicatedMapping)
-        assert isinstance(mappings[f"decoder.hc_head_params.hc_head_{suffix}"], ReplicatedMapping)
+        assert isinstance(mappings[f"decoder.hc_head_{suffix}"], ReplicatedMapping)
 
-    assert isinstance(mappings["decoder.layers.*.self_attention.attn_sink"], ColumnParallelMapping)
+    assert isinstance(
+        mappings["decoder.layers.*.self_attention.core_attention.attn_sink"], ColumnParallelMapping
+    )
     for prefix in (
-        "decoder.layers.*.self_attention.compressor",
-        "decoder.layers.*.self_attention.indexer.compressor",
+        "decoder.layers.*.self_attention.core_attention.compressor",
+        "decoder.layers.*.self_attention.core_attention.indexer.compressor",
     ):
-        for suffix in ("ape", "wkv.weight", "wgate.weight", "norm.weight"):
+        for suffix in ("ape", "linear_wkv.weight", "linear_wgate.weight", "norm.weight"):
             assert isinstance(mappings[f"{prefix}.{suffix}"], ReplicatedMapping)
 
-    assert isinstance(mappings["decoder.layers.*.self_attention.wq_b.weight"], AutoMapping)
     assert isinstance(
-        mappings["decoder.layers.*.self_attention.indexer.linear_wq_b.weight"],
+        mappings["decoder.layers.*.self_attention.linear_q_up_proj.weight"], AutoMapping
+    )
+    assert isinstance(
+        mappings["decoder.layers.*.self_attention.core_attention.indexer.linear_wq_b.weight"],
         AutoMapping,
     )
     assert isinstance(mappings["decoder.layers.*.mlp.router.tid2eid"], ReplicatedMapping)
@@ -135,14 +144,20 @@ def test_dsv4_lora_construction_selects_native_provider():
 
 def test_dsv4_main_attention_targets_are_disambiguated_from_indexer():
     assert _qualify_deepseek_v4_lora_targets(
-        ["wq_a", "wq_b", "wkv", "wo_a", "wo_b", "indexer.wq_b", "linear_fc1"]
+        [
+            "linear_q_down_proj",
+            "linear_q_up_proj",
+            "linear_kv_proj",
+            "linear_proj",
+            "indexer.linear_wq_b",
+            "linear_fc1",
+        ]
     ) == [
-        "*.self_attention.wq_a",
-        "*.self_attention.wq_b",
-        "*.self_attention.wkv",
-        "*.self_attention.wo_a",
-        "*.self_attention.wo_b",
-        "indexer.wq_b",
+        "*.self_attention.linear_q_down_proj",
+        "*.self_attention.linear_q_up_proj",
+        "*.self_attention.linear_kv_proj",
+        "*.self_attention.linear_proj",
+        "indexer.linear_wq_b",
         "linear_fc1",
     ]
 
