@@ -122,6 +122,29 @@ def test_dsv4_explicit_mapping_semantics():
     assert isinstance(mappings["decoder.layers.*.mlp.router.expert_bias"], ReplicatedMapping)
 
 
+def test_dsv4_explicit_mappings_win_over_common_deepseek_names():
+    """Registry lookups are first-match-wins; V4 names must shadow the V3-style common list."""
+    from transformers import AutoConfig
+
+    from miles_plugins.megatron_bridge.deepseek_v4 import MilesDeepSeekV4Bridge
+
+    hf_config = AutoConfig.from_pretrained(
+        "Pinaster/DeepSeek-V4-Flash-FP8-4layer", trust_remote_code=True
+    )
+    bridge = MilesDeepSeekV4Bridge()
+    bridge.hf_config = hf_config
+    registry = bridge.mapping_registry()
+
+    expected = {
+        "decoder.layers.0.self_attention.linear_q_down_proj.weight": "model.layers.0.self_attn.wq_a.weight",
+        "decoder.layers.0.self_attention.linear_q_up_proj.weight": "model.layers.0.self_attn.wq_b.weight",
+        "decoder.layers.0.self_attention.linear_kv_proj.weight": "model.layers.0.self_attn.wkv.weight",
+        "decoder.layers.0.self_attention.linear_proj.weight": "model.layers.0.self_attn.wo_b.weight",
+    }
+    for megatron_name, hf_name in expected.items():
+        assert registry.megatron_to_hf_lookup(megatron_name).hf_param == hf_name
+
+
 def test_dsv4_lora_construction_selects_native_provider():
     args = Namespace(hf_checkpoint="checkpoint")
     config = SimpleNamespace(architectures=["DeepseekV4ForCausalLM"])

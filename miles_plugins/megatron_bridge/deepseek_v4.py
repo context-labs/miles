@@ -124,8 +124,11 @@ class MilesDeepSeekV4Bridge(DeepSeekV3Bridge):
         )
 
     def mapping_registry(self) -> MegatronMappingRegistry:
-        mappings = get_common_mapping_list(hf_config=self.hf_config)
-        mappings.extend(_get_dsv4_explicit_mappings())
+        # Explicit V4 mappings must come first: registry lookups are
+        # first-match-wins, and the shared DeepSeek list covers V3-style names
+        # (e.g. ``linear_proj`` -> ``o_proj``) that mean something else on V4.
+        mappings = _get_dsv4_explicit_mappings()
+        mappings.extend(get_common_mapping_list(hf_config=self.hf_config))
         return MegatronMappingRegistry(*mappings)
 
 
