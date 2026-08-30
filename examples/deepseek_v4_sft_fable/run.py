@@ -91,7 +91,7 @@ def execute(args: ScriptArgs):
         f"--num-epoch {args.num_epoch} "
         f"--rollout-batch-size {args.rollout_batch_size} "
         f"--global-batch-size {args.global_batch_size} "
-        f"--max-seq-len {args.max_seq_len} "
+        f"--seq-length {args.max_seq_len} "
         "--loss-type sft_loss "
         "--calculate-per-token-loss "
         "--disable-compute-advantages-and-returns "
